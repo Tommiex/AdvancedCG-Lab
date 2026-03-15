@@ -1,0 +1,61 @@
+{
+  "version": 4,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20 },
+
+  "configurePresets": [
+    {
+      "name": "win-msvc",
+      "displayName": "Windows MSVC (VS2022)",
+      "generator": "Visual Studio 16 2019",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "mac-intel",
+      "displayName": "macOS Intel (x64, Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "x86_64",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-osx"
+      }
+    },
+    {
+      "name": "mac-arm64",
+      "displayName": "macOS Apple Silicon (arm64, Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx"
+      }
+    },
+    {
+      "name": "linux-x64",
+      "displayName": "Linux x64 (Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    { "name": "build-win-debug",   "configurePreset": "win-msvc",  "configuration": "Debug"   },
+    { "name": "build-win-release", "configurePreset": "win-msvc",  "configuration": "Release" },
+    { "name": "build-mac-intel",   "configurePreset": "mac-intel"  },
+    { "name": "build-mac-arm64",   "configurePreset": "mac-arm64"  },
+    { "name": "build-linux",       "configurePreset": "linux-x64"  }
+  ]
+}
