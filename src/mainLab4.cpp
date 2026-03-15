@@ -126,23 +126,22 @@ static void updateWorldFrames(std::vector<Node> &nodes)
     }
 }
 
-static glm::vec3 projectOntoPlane(const glm::vec3 &v, const glm::vec3 &axis)
+static glm::vec3 projectOntoPlane(const glm::vec3& v, const glm::vec3& axis)
 {
-    glm::vec3 ax = glm::normalize(axis);
-    return v - glm::dot(v, ax) * ax;
+glm::vec3 ax = glm::normalize(axis);
+return v - glm::dot(v, ax) * ax;
 }
-static float signedAngleAroundAxis(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &axis)
+static float signedAngleAroundAxis(const glm::vec3& a, const glm::vec3& b, const glm::vec3& axis)
 {
-    glm::vec3 aa = glm::normalize(a);
-    glm::vec3 bb = glm::normalize(b);
-    glm::vec3 ax = glm::normalize(axis);
-    float cosang = glm::clamp(glm::dot(aa, bb), -1.0f, 1.0f);
-    float ang = std::acos(cosang);
-    // sign via triple product
-    float s = glm::dot(ax, glm::cross(aa, bb));
-    if (s < 0.0f)
-        ang = -ang;
-    return ang;
+glm::vec3 aa = glm::normalize(a);
+glm::vec3 bb = glm::normalize(b);
+glm::vec3 ax = glm::normalize(axis);
+float cosang = glm::clamp(glm::dot(aa, bb), -1.0f, 1.0f);
+float ang = std::acos(cosang);
+// sign via triple product
+float s = glm::dot(ax, glm::cross(aa, bb));
+if (s < 0.0f) ang = -ang;
+return ang;
 }
 int main()
 {
@@ -247,25 +246,14 @@ int main()
     float lastTime = (float)glfwGetTime();
     const float speed = 1.5f;
 
-    enum class SolverMode
-    {
-        CCD = 1,
-        JacT = 2,
-        DLS = 3
-    };
-    SolverMode currentMode = SolverMode::CCD;
-    bool isIKEnabled = true;
-
-    // IK Constants [cite: 256, 257, 537]
-    const float gain = 0.75f;
-    const float maxStep = glm::radians(12.0f);
-    const float lambda = 0.35f; // Damping for DLS
+    
 
     while (!glfwWindowShouldClose(w))
     {
         float now = (float)glfwGetTime(), dt = now - lastTime;
         lastTime = now;
         glfwPollEvents();
+        
 
         float moveSpeed = 1.2f; // units/sec
 
@@ -281,125 +269,54 @@ int main()
             targetPos.z -= moveSpeed * dt;
         if (glfwGetKey(w, GLFW_KEY_O) == GLFW_PRESS)
             targetPos.z += moveSpeed * dt;
-        if (glfwGetKey(w, GLFW_KEY_1) == GLFW_PRESS)
-            currentMode = SolverMode::CCD;
-        if (glfwGetKey(w, GLFW_KEY_2) == GLFW_PRESS)
-            currentMode = SolverMode::JacT;
-        if (glfwGetKey(w, GLFW_KEY_3) == GLFW_PRESS)
-            currentMode = SolverMode::DLS;
-        if (glfwGetKey(w, GLFW_KEY_T) == GLFW_PRESS)
-            isIKEnabled = !isIKEnabled;
         // keep it visible
         targetPos.x = glm::clamp(targetPos.x, -2.0f, 2.0f);
         targetPos.y = glm::clamp(targetPos.y, 0.2f, 2.5f);
         targetPos.z = glm::clamp(targetPos.z, -2.0f, 2.0f);
 
+
         const float gain = 0.75f;
         const float maxDelta = glm::radians(4.0f);
-        if (isIKEnabled)
-        {
-            for (int iter = 0; iter < 10; iter++)
-            {
-                rebuildFK(); // Ensure frames are current [cite: 194, 213]
+        for (int iter = 0; iter < 10; iter++) { // Repeat for N iterations [cite: 220]
+    rebuildFK(); // Update world frames to get current positions [cite: 194, 213]
+    
+    // Get end-effector position (Hand is nodes[4]) [cite: 71, 221]
+    glm::vec3 endPos = glm::vec3(nodes[4].worldFrame[3]); 
 
-                glm::vec3 endPos = glm::vec3(nodes[4].worldFrame[3]); // Hand position [cite: 221]
-                glm::vec3 error = targetPos - endPos;                 // [cite: 436]
+    // Iterate joints from Hand back to Shoulder [cite: 222, 223]
+    for (int j = 3; j >= 1; j--) {
+        glm::vec3 jointPos = glm::vec3(nodes[j].worldFrame[3]); 
+        
+        glm::vec3 localAxis = (j == 1) ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0); 
+        
+        glm::vec3 axisW = glm::normalize(glm::mat3(nodes[j].worldFrame) * localAxis);
 
-                if (glm::length(error) < 0.01f)
-                    break; // Stop early if close enough [cite: 227]
+        glm::vec3 vEnd = endPos - jointPos;
+        glm::vec3 vTar = targetPos - jointPos;
 
-                if (currentMode == SolverMode::CCD)
-                {
-                    // CCD: Iterate from hand back to base [cite: 21, 222]
-                    int joints[] = {3, 2, 1, 1};                                     // Wrist, Elbow, Shoulder Pitch, Shoulder Yaw
-                    glm::vec3 axes[] = {{0, 1, 0}, {1, 0, 0}, {1, 0, 0}, {0, 1, 0}}; // Local axes [cite: 465-468]
+        glm::vec3 pEnd = projectOntoPlane(vEnd, axisW);
+        glm::vec3 pTar = projectOntoPlane(vTar, axisW);
 
-                    for (int i = 0; i < 4; i++)
-                    {
-                        int j = joints[i];
-                        glm::vec3 jointPos = glm::vec3(nodes[j].worldFrame[3]);
-                        glm::vec3 axisW = glm::normalize(glm::mat3(nodes[j].worldFrame) * axes[i]); // [cite: 231, 412]
+        if (glm::length(pEnd) > 1e-5f && glm::length(pTar) > 1e-5f){
+            float d = signedAngleAroundAxis(pEnd, pTar, axisW); 
+            
 
-                        glm::vec3 vEnd = endPos - jointPos;
-                        glm::vec3 vTar = targetPos - jointPos;
+            d = glm::clamp(d * gain, -maxDelta, maxDelta);
+            if (j == 1) shoulderYaw += d;
+            else if (j == 2) elbowPitch += d;
 
-                        glm::vec3 pEnd = projectOntoPlane(vEnd, axisW);
-                        glm::vec3 pTar = projectOntoPlane(vTar, axisW);
-
-                        if (glm::length(pEnd) > 1e-5f && glm::length(pTar) > 1e-5f)
-                        {
-                            float d = signedAngleAroundAxis(pEnd, pTar, axisW);
-                            d = glm::clamp(d * gain, -maxStep, maxStep); // [cite: 249, 427]
-
-                            // Apply to specific variables
-                            if (i == 0)
-                                wristTwist += d;
-                            else if (i == 1)
-                                elbowPitch += d;
-                            else if (i == 2)
-                                shoulderPitch += d;
-                            else if (i == 3)
-                                shoulderYaw += d;
-                        }
-                        rebuildFK(); // Refresh frames for the next joint in the chain
-                    }
-                }
-                else
-                {
-                    // Jacobian Methods: Build the Jacobian Matrix [cite: 469-485]
-                    glm::vec3 pW = glm::vec3(nodes[3].worldFrame[3]); // Wrist pos
-                    glm::vec3 pE = glm::vec3(nodes[2].worldFrame[3]); // Elbow pos
-                    glm::vec3 pS = glm::vec3(nodes[1].worldFrame[3]); // Shoulder pos
-
-                    // World axes [cite: 463]
-                    glm::vec3 aW = glm::normalize(glm::mat3(nodes[3].worldFrame) * glm::vec3(0, 1, 0));
-                    glm::vec3 aE = glm::normalize(glm::mat3(nodes[2].worldFrame) * glm::vec3(1, 0, 0));
-                    glm::vec3 aSP = glm::normalize(glm::mat3(nodes[1].worldFrame) * glm::vec3(1, 0, 0));
-                    glm::vec3 aSY = glm::normalize(glm::mat3(nodes[1].worldFrame) * glm::vec3(0, 1, 0));
-
-                    // Jacobian columns: J = axis cross (end - joint) [cite: 456, 481-483]
-                    glm::vec3 J0 = glm::cross(aW, (endPos - pW));
-                    glm::vec3 J1 = glm::cross(aE, (endPos - pE));
-                    glm::vec3 J2 = glm::cross(aSP, (endPos - pS));
-                    glm::vec3 J3 = glm::cross(aSY, (endPos - pS));
-                    std::vector<glm::vec3> J = {J0, J1, J2, J3};
-
-                    if (currentMode == SolverMode::JacT)
-                    {
-                        // Jacobian Transpose: dtheta = alpha * dot(J, error) [cite: 520, 529]
-                        wristTwist += glm::clamp(glm::dot(J[0], error) * gain, -maxStep, maxStep);
-                        elbowPitch += glm::clamp(glm::dot(J[1], error) * gain, -maxStep, maxStep);
-                        shoulderPitch += glm::clamp(glm::dot(J[2], error) * gain, -maxStep, maxStep);
-                        shoulderYaw += glm::clamp(glm::dot(J[3], error) * gain, -maxStep, maxStep);
-                    }
-                    else if (currentMode == SolverMode::DLS)
-                    {
-                        // Jacobian DLS: x = inverse(JJ^T + lambda^2 I) * error [cite: 534, 572]
-                        glm::mat3 JJT(0.0f);
-                        for (const auto &col : J)
-                            JJT += glm::outerProduct(col, col);     // [cite: 552]
-                        JJT += (lambda * lambda) * glm::mat3(1.0f); // Damping [cite: 555]
-
-                        glm::vec3 x = glm::inverse(JJT) * error; // [cite: 560]
-
-                        // dtheta = dot(J, x) [cite: 565, 572]
-                        wristTwist += glm::clamp(glm::dot(J[0], x) * gain, -maxStep, maxStep);
-                        elbowPitch += glm::clamp(glm::dot(J[1], x) * gain, -maxStep, maxStep);
-                        shoulderPitch += glm::clamp(glm::dot(J[2], x) * gain, -maxStep, maxStep);
-                        shoulderYaw += glm::clamp(glm::dot(J[3], x) * gain, -maxStep, maxStep);
-                    }
-                }
-            }
         }
+    }
+}
         rebuildFK();
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+        
         meshSh.UseShader();
         glm::mat4 targetM = glm::translate(glm::mat4(1.0f), targetPos) * glm::scale(glm::mat4(1.0f), glm::vec3(0.18f));
         glUniformMatrix4fv(uModel_m, 1, GL_FALSE, glm::value_ptr(targetM));
         glUniform3f(uColor_m, 1.0f, 0.1f, 0.9f);
-        glBindVertexArray(cube.VAO);
+        glBindVertexArray(cube.VAO);    
         glDrawElements(GL_TRIANGLES, cube.indexCount, GL_UNSIGNED_INT, 0);
 
         glUniformMatrix4fv(uView_m, 1, GL_FALSE, glm::value_ptr(view));
